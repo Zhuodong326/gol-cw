@@ -16,26 +16,18 @@ type distributorChannels struct {
 }
 
 func workers(p Params, world [][]byte, result chan<- [][]byte, start, end int) {
-
-	// Help the  worker to process the boundary line
-	// UpperLine
-	//var lowerLine, upperLine [][]byte
-	// if start == 0 {
-	// 	worldPiece = append([][]byte{world[p.ImageHeight-1]}, worldPiece...)
-	// 	worldPiece = append(worldPiece, [][]byte{world[end]}...)
-	// } else if end == p.ImageHeight {
-	// 	worldPiece = append([][]byte{world[start-1]}, worldPiece...)
-	// 	worldPiece = append(worldPiece, [][]byte{world[start]}...)
-	// } else {
-	// 	worldPiece = append([][]byte{world[start-1]}, worldPiece...)
-	// 	worldPiece = append(worldPiece, [][]byte{world[end]}...)
-	// }
-	//p.ImageHeight += 2
-	worldPiece := nextState(p, world)
-	// Send the part of the result
+	worldPiece := nextState(p, world, start, end)
 	result <- worldPiece
-
 	close(result)
+}
+
+func copySlice(src [][]byte) [][]byte {
+	dst := make([][]byte, len(src))
+	for i := range src {
+		dst[i] = make([]byte, len(src[i]))
+		copy(dst[i], src[i])
+	}
+	return dst
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
@@ -62,40 +54,34 @@ func distributor(p Params, c distributorChannels) {
 	// TODO: Execute all turns of the Game of Life.
 	for ; turn < p.Turns; turn++ {
 		if p.Threads == 1 {
-			for ; turn < p.Turns; turn++ {
-				world = nextState(p, world)
-			}
+			world = nextState(p, world, 0, p.ImageHeight)
 		} else {
 			newSize := p.ImageHeight / p.Threads
-			newP := p
-			newP.ImageHeight = newSize
 			result := make([]chan [][]uint8, p.Threads)
+
 			for i := range result {
 				result[i] = make(chan [][]uint8)
 			}
 
-			//worldPiece := make([][]byte, newSize+2)
 			for i := 0; i < p.Threads; i++ {
 				start := i * newSize
 				end := start + newSize
 				if i == p.Threads-1 {
 					end = p.ImageHeight
 				}
-				//copy(worldPiece, world[start:end])
-				worldPiece := world[start:end]
-				go workers(newP, worldPiece, result[i], start, end)
+				worldCopy := copySlice(world)
+				go workers(p, worldCopy, result[i], start, end)
 			}
 
 			for i := 0; i < p.Threads; i++ {
-				start := i * newSize
-				end := start + newSize
-				if i == p.Threads-1 {
-					end = p.ImageHeight
-				}
 				result := <-result[i]
-				//world = append(world, result...)
-				copy(world[start:end], result)
+				start := i * newSize
+				// This ensures that we are copying the worker result to the correct place in the world.
+				for j := start; j < start+len(result); j++ {
+					copy(world[j], result[j-start])
+				}
 			}
+
 		}
 		c.events <- TurnComplete{turn}
 	}
@@ -113,9 +99,9 @@ func distributor(p Params, c distributorChannels) {
 }
 
 // Gol next state
-func nextState(p Params, world [][]byte) [][]byte {
+func nextState(p Params, world [][]byte, start, end int) [][]byte {
 	// allocate space
-	nextWorld := make([][]byte, p.ImageHeight)
+	nextWorld := make([][]byte, end-start)
 	for i := range nextWorld {
 		nextWorld[i] = make([]byte, p.ImageWidth)
 	}
@@ -126,7 +112,7 @@ func nextState(p Params, world [][]byte) [][]byte {
 		{1, -1}, {1, 0}, {1, 1},
 	}
 
-	for row := 0; row < p.ImageHeight; row++ {
+	for row := start; row < end; row++ {
 		for col := 0; col < p.ImageWidth; col++ {
 			// the alive must be set to 0 everytime when it comes to a different position
 			alive := 0
@@ -139,15 +125,15 @@ func nextState(p Params, world [][]byte) [][]byte {
 			}
 			if world[row][col] == 255 {
 				if alive < 2 || alive > 3 {
-					nextWorld[row][col] = 0
+					nextWorld[row-start][col] = 0
 				} else {
-					nextWorld[row][col] = 255
+					nextWorld[row-start][col] = 255
 				}
 			} else if world[row][col] == 0 {
 				if alive == 3 {
-					nextWorld[row][col] = 255
+					nextWorld[row-start][col] = 255
 				} else {
-					nextWorld[row][col] = 0
+					nextWorld[row-start][col] = 0
 				}
 			}
 		}
