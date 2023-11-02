@@ -15,6 +15,29 @@ type distributorChannels struct {
 	ioInput    <-chan uint8
 }
 
+func workers(p Params, world [][]byte, result chan<- [][]byte, start, end int) {
+
+	// Help the  worker to process the boundary line
+	// UpperLine
+	//var lowerLine, upperLine [][]byte
+	// if start == 0 {
+	// 	worldPiece = append([][]byte{world[p.ImageHeight-1]}, worldPiece...)
+	// 	worldPiece = append(worldPiece, [][]byte{world[end]}...)
+	// } else if end == p.ImageHeight {
+	// 	worldPiece = append([][]byte{world[start-1]}, worldPiece...)
+	// 	worldPiece = append(worldPiece, [][]byte{world[start]}...)
+	// } else {
+	// 	worldPiece = append([][]byte{world[start-1]}, worldPiece...)
+	// 	worldPiece = append(worldPiece, [][]byte{world[end]}...)
+	// }
+	//p.ImageHeight += 2
+	worldPiece := nextState(p, world)
+	// Send the part of the result
+	result <- worldPiece
+
+	close(result)
+}
+
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
 
@@ -38,7 +61,42 @@ func distributor(p Params, c distributorChannels) {
 	turn := 0
 	// TODO: Execute all turns of the Game of Life.
 	for ; turn < p.Turns; turn++ {
-		world = nextState(p, world)
+		if p.Threads == 1 {
+			for ; turn < p.Turns; turn++ {
+				world = nextState(p, world)
+			}
+		} else {
+			newSize := p.ImageHeight / p.Threads
+			newP := p
+			newP.ImageHeight = newSize
+			result := make([]chan [][]uint8, p.Threads)
+			for i := range result {
+				result[i] = make(chan [][]uint8)
+			}
+
+			//worldPiece := make([][]byte, newSize+2)
+			for i := 0; i < p.Threads; i++ {
+				start := i * newSize
+				end := start + newSize
+				if i == p.Threads-1 {
+					end = p.ImageHeight
+				}
+				//copy(worldPiece, world[start:end])
+				worldPiece := world[start:end]
+				go workers(newP, worldPiece, result[i], start, end)
+			}
+
+			for i := 0; i < p.Threads; i++ {
+				start := i * newSize
+				end := start + newSize
+				if i == p.Threads-1 {
+					end = p.ImageHeight
+				}
+				result := <-result[i]
+				//world = append(world, result...)
+				copy(world[start:end], result)
+			}
+		}
 		c.events <- TurnComplete{turn}
 	}
 
