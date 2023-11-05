@@ -2,9 +2,13 @@ package gol
 
 import (
 	"fmt"
+	"sync"
+	"time"
 
 	"uk.ac.bris.cs/gameoflife/util"
 )
+
+var mutex sync.Mutex
 
 type distributorChannels struct {
 	events     chan<- Event
@@ -32,11 +36,11 @@ func copySlice(src [][]byte) [][]byte {
 
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
-
 	// The ioInput is just a const for operation
 	// It determines the operation to do
 	c.ioCommand <- ioInput
 	c.ioFilename <- fmt.Sprintf("%dx%d", p.ImageHeight, p.ImageWidth)
+
 	// TODO: Create a 2D slice to store the world.
 	world := make([][]byte, p.ImageHeight)
 	for i := range world {
@@ -50,7 +54,22 @@ func distributor(p Params, c distributorChannels) {
 
 		}
 	}
+
+	turnCount := 0
 	turn := 0
+	ticker := time.NewTicker(2 * time.Second)
+	var cellCount int
+	defer ticker.Stop()
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				mutex.Lock()
+				c.events <- AliveCellsCount{turnCount, cellCount}
+				mutex.Unlock()
+			}
+		}
+	}()
 	// TODO: Execute all turns of the Game of Life.
 	for ; turn < p.Turns; turn++ {
 		if p.Threads == 1 {
@@ -81,8 +100,11 @@ func distributor(p Params, c distributorChannels) {
 					copy(world[j], result[j-start])
 				}
 			}
-
 		}
+		mutex.Lock()
+		turnCount += 1
+		cellCount = len(calculateAliveCells(p, world))
+		mutex.Unlock()
 		c.events <- TurnComplete{turn}
 	}
 
