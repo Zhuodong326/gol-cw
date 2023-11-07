@@ -5,10 +5,9 @@ import (
 	"sync"
 	"time"
 
+	//"github.com/veandco/go-sdl2/sdl"
 	"uk.ac.bris.cs/gameoflife/util"
 )
-
-var mutex sync.Mutex
 
 type distributorChannels struct {
 	events     chan<- Event
@@ -39,7 +38,7 @@ func distributor(p Params, c distributorChannels) {
 	// The ioInput is just a const for operation
 	// It determines the operation to do
 	c.ioCommand <- ioInput
-	c.ioFilename <- fmt.Sprintf("%dx%d", p.ImageHeight, p.ImageWidth)
+	c.ioFilename <- fmt.Sprintf("%vx%v", p.ImageHeight, p.ImageWidth)
 
 	// TODO: Create a 2D slice to store the world.
 	world := make([][]byte, p.ImageHeight)
@@ -51,35 +50,45 @@ func distributor(p Params, c distributorChannels) {
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
 			world[y][x] = <-c.ioInput
-
+			// if world[y][x] == 255 {
+			// 	c.events <- CellFlipped{0, util.Cell{X: x, Y: y}}
+			// }
 		}
 	}
 
 	turnCount := 0
 	turn := 0
-	ticker := time.NewTicker(2 * time.Second)
+	//done := make(chan bool)
 	var cellCount int
+	var mutex sync.Mutex
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				mutex.Lock()
-				c.events <- AliveCellsCount{turnCount, cellCount}
-				mutex.Unlock()
-			}
+		//defer ticker.Stop()
+		for range ticker.C {
+			mutex.Lock()
+			c.events <- AliveCellsCount{turnCount, cellCount}
+			mutex.Unlock()
 		}
 	}()
+
 	// TODO: Execute all turns of the Game of Life.
 	for ; turn < p.Turns; turn++ {
+		// for {
+		// 	key := <-sdl.KeyboardEvent
+		// 	select {
+		// 	case key == 's':
+
+		// 	}
+		// }
 		if p.Threads == 1 {
 			world = nextState(p, world, 0, p.ImageHeight)
 		} else {
 			newSize := p.ImageHeight / p.Threads
-			result := make([]chan [][]uint8, p.Threads)
+			result := make([]chan [][]byte, p.Threads)
 
 			for i := range result {
-				result[i] = make(chan [][]uint8)
+				result[i] = make(chan [][]byte)
 			}
 
 			for i := 0; i < p.Threads; i++ {
@@ -97,14 +106,19 @@ func distributor(p Params, c distributorChannels) {
 				start := i * newSize
 				// This ensures that we are copying the worker result to the correct place in the world.
 				for j := start; j < start+len(result); j++ {
+					// for k := 0; k < p.ImageWidth; k++ {
+					// 	if result[j-start][k] != world[j][k] {
+					// 		c.events <- CellFlipped{turn + 1, util.Cell{X: j, Y: k}}
+					// 	}
+					// }
 					copy(world[j], result[j-start])
 				}
 			}
+			mutex.Lock()
+			turnCount++
+			cellCount = len(calculateAliveCells(p, world))
+			mutex.Unlock()
 		}
-		mutex.Lock()
-		turnCount += 1
-		cellCount = len(calculateAliveCells(p, world))
-		mutex.Unlock()
 		c.events <- TurnComplete{turn}
 	}
 
@@ -112,9 +126,8 @@ func distributor(p Params, c distributorChannels) {
 	c.events <- FinalTurnComplete{turn, calculateAliveCells(p, world)}
 
 	// Output
-
 	c.ioCommand <- ioOutput
-	c.ioFilename <- fmt.Sprintf("%dx%dx%d", p.ImageHeight, p.ImageWidth, p.Turns)
+	c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, p.Turns)
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
 			c.ioOutput <- world[y][x]
