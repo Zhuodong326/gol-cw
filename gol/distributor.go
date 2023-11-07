@@ -50,21 +50,19 @@ func distributor(p Params, c distributorChannels) {
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
 			world[y][x] = <-c.ioInput
-			// if world[y][x] == 255 {
-			// 	c.events <- CellFlipped{0, util.Cell{X: x, Y: y}}
-			// }
+			if world[y][x] == 255 {
+				c.events <- CellFlipped{0, util.Cell{X: x, Y: y}}
+			}
 		}
 	}
 
 	turnCount := 0
 	turn := 0
-	//done := make(chan bool)
 	var cellCount int
 	var mutex sync.Mutex
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	go func() {
-		//defer ticker.Stop()
 		for range ticker.C {
 			mutex.Lock()
 			c.events <- AliveCellsCount{turnCount, cellCount}
@@ -106,11 +104,11 @@ func distributor(p Params, c distributorChannels) {
 				start := i * newSize
 				// This ensures that we are copying the worker result to the correct place in the world.
 				for j := start; j < start+len(result); j++ {
-					// for k := 0; k < p.ImageWidth; k++ {
-					// 	if result[j-start][k] != world[j][k] {
-					// 		c.events <- CellFlipped{turn + 1, util.Cell{X: j, Y: k}}
-					// 	}
-					// }
+					for k := 0; k < p.ImageWidth; k++ {
+						if result[j-start][k] != world[j][k] {
+							c.events <- CellFlipped{turn + 1, util.Cell{X: k, Y: j}}
+						}
+					}
 					copy(world[j], result[j-start])
 				}
 			}
