@@ -79,7 +79,7 @@ func distributor(p Params, c distributorChannels) {
 				switch key {
 				case 's':
 					c.ioCommand <- ioOutput
-					c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, p.Turns)
+					c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, turnCount)
 					for y := 0; y < p.ImageHeight; y++ {
 						for x := 0; x < p.ImageWidth; x++ {
 							c.ioOutput <- world[y][x]
@@ -88,7 +88,7 @@ func distributor(p Params, c distributorChannels) {
 					//fmt.Println("here in s")
 				case 'q':
 					c.ioCommand <- ioOutput
-					c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, p.Turns)
+					c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, turnCount)
 					for y := 0; y < p.ImageHeight; y++ {
 						for x := 0; x < p.ImageWidth; x++ {
 							c.ioOutput <- world[y][x]
@@ -158,7 +158,6 @@ func distributor(p Params, c distributorChannels) {
 
 	// TODO: Report the final state using FinalTurnCompleteEvent.
 	c.events <- FinalTurnComplete{turn, calculateAliveCells(p, world)}
-	quit <- true
 
 	// Output
 	c.ioCommand <- ioOutput
@@ -174,6 +173,7 @@ func distributor(p Params, c distributorChannels) {
 	<-c.ioIdle
 
 	c.events <- StateChange{turn, Quitting}
+	quit <- true
 
 	close(quit)
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
