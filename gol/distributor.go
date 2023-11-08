@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	//"github.com/veandco/go-sdl2/sdl"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -16,6 +15,7 @@ type distributorChannels struct {
 	ioFilename chan<- string
 	ioOutput   chan<- uint8
 	ioInput    <-chan uint8
+	key        <-chan rune
 }
 
 func workers(p Params, world [][]byte, result chan<- [][]byte, start, end int) {
@@ -58,6 +58,7 @@ func distributor(p Params, c distributorChannels) {
 
 	turnCount := 0
 	turn := 0
+	paused := false
 	var cellCount int
 	var mutex sync.Mutex
 	ticker := time.NewTicker(2 * time.Second)
@@ -70,15 +71,50 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}()
 
+	quit := make(chan bool)
+	go func() {
+		for {
+			select {
+			case key := <-c.key:
+				switch key {
+				case 's':
+					c.ioCommand <- ioOutput
+					c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, p.Turns)
+					for y := 0; y < p.ImageHeight; y++ {
+						for x := 0; x < p.ImageWidth; x++ {
+							c.ioOutput <- world[y][x]
+						}
+					}
+					//fmt.Println("here in s")
+				case 'q':
+					c.ioCommand <- ioOutput
+					c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, p.Turns)
+					for y := 0; y < p.ImageHeight; y++ {
+						for x := 0; x < p.ImageWidth; x++ {
+							c.ioOutput <- world[y][x]
+						}
+					}
+					c.events <- FinalTurnComplete{turn, calculateAliveCells(p, world)}
+					c.ioCommand <- ioCheckIdle
+					<-c.ioIdle
+					c.events <- StateChange{turn, Quitting}
+					quit <- true
+				case 'p':
+					paused = !paused
+					if paused == false {
+						fmt.Println("Continuing")
+						c.events <- StateChange{turn, Executing}
+					} else {
+						c.events <- StateChange{turn, Paused}
+					}
+				}
+			case <-quit:
+				return
+			}
+		}
+	}()
 	// TODO: Execute all turns of the Game of Life.
 	for ; turn < p.Turns; turn++ {
-		// for {
-		// 	key := <-sdl.KeyboardEvent
-		// 	select {
-		// 	case key == 's':
-
-		// 	}
-		// }
 		if p.Threads == 1 {
 			world = nextState(p, world, 0, p.ImageHeight)
 		} else {
@@ -122,6 +158,7 @@ func distributor(p Params, c distributorChannels) {
 
 	// TODO: Report the final state using FinalTurnCompleteEvent.
 	c.events <- FinalTurnComplete{turn, calculateAliveCells(p, world)}
+	quit <- true
 
 	// Output
 	c.ioCommand <- ioOutput
@@ -138,6 +175,7 @@ func distributor(p Params, c distributorChannels) {
 
 	c.events <- StateChange{turn, Quitting}
 
+	close(quit)
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 	close(c.events)
 }
