@@ -58,7 +58,6 @@ func distributor(p Params, c distributorChannels) {
 
 	turnCount := 0
 	turn := 0
-	paused := false
 	var cellCount int
 	var mutex sync.Mutex
 	ticker := time.NewTicker(2 * time.Second)
@@ -71,6 +70,8 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}()
 
+	pasued := false
+	resume := make(chan bool)
 	quit := make(chan bool)
 	go func() {
 		for {
@@ -100,12 +101,13 @@ func distributor(p Params, c distributorChannels) {
 					c.events <- StateChange{turn, Quitting}
 					quit <- true
 				case 'p':
-					paused = !paused
-					if paused == false {
+					pasued = !pasued
+					if pasued {
+						c.events <- StateChange{turn, Paused}
+					} else {
 						fmt.Println("Continuing")
 						c.events <- StateChange{turn, Executing}
-					} else {
-						c.events <- StateChange{turn, Paused}
+						resume <- true
 					}
 				}
 			case <-quit:
@@ -115,6 +117,9 @@ func distributor(p Params, c distributorChannels) {
 	}()
 	// TODO: Execute all turns of the Game of Life.
 	for ; turn < p.Turns; turn++ {
+		if pasued {
+			<-resume
+		}
 		if p.Threads == 1 {
 			world = nextState(p, world, 0, p.ImageHeight)
 		} else {
