@@ -4,9 +4,9 @@
 
 **[Alternative perspective on interfaces in Go done by George](https://web.microsoftstream.com/video/30a6b464-aa7a-4e56-abf8-3534275440e3)**
 
-<!---
+
 **[Video Walkthrough of Distributed Component](https://web.microsoftstream.com/video/b4f92750-6f76-4f51-8d37-93413c3cb088)** 
--->
+
 <!-- **[Coursework Q&A Recording](https://web.microsoftstream.com/video/ab833321-3a78-4c83-b87e-16ce1b5c244f)** -->
 
 <!---
@@ -44,7 +44,8 @@ The skeleton code uses SDL. This is a basic graphics library which you already u
 - **Linux Lab Machines** - SDL should already be installed and working.
 - **Personal Ubuntu PCs** - `sudo apt install libsdl2-dev`
 - **MacOS** - `brew install sdl2` or use the official [`.dmg` installer](https://www.libsdl.org/download-2.0.php).
-- **Other** - Consult the [official documentation](https://wiki.libsdl.org/Installation) or see our [experimental instructions for running natively on Windows](content/windows_sdl_native.md)
+- **Windows** - Use Ubuntu with WSL2. See our [guide](https://github.com/UoB-CSA/setup-guides/blob/master/go-install/windows.md).
+- **Other** - Consult the [official documentation](https://wiki.libsdl.org/Installation).
 
 ### Submission
 
@@ -136,7 +137,7 @@ Test the visualisation and control rules by running `go run .`
 - Analyse how your implementation scales as more workers are added.
 - Briefly discuss your methodology for acquiring any results or measurements.
 
-<!---
+
 ## Stage 2 - Distributed Implementation
 
 In this stage, you are required to create an implementation that uses a number of
@@ -145,20 +146,8 @@ and communicate state between machines over a network.  Below is a series of
 suggested steps for approaching the problem, but you are *not* required to
 follow this sequence, and can jump straight to implementing the more advanced
 versions of the system if you feel confident about it.
--->
-<!---
-**IMPORTANT: You need to modify [the count_test](https://github.com/UoB-CSA/gol-skeleton/blob/master/count_test.go) when testing your distributed implementation by replacing lines 41-53 with:**
 
-```
-for event := range events {
-    switch e := event.(type) {
-    case gol.AliveCellsCount:
-        var expected int
-```
 
-There is a modified version of the test file available [here](https://seis.bristol.ac.uk/~sh1670/dist_count_test.go)
--->
-<!---
 ### Step 1
 
 ![Step 1](content/cw_diagrams-Distributed_1.png)
@@ -327,5 +316,3 @@ Make sure your team member’s names and user names appear on page 1 of the repo
 You will be required to demonstrate your implementations in a viva. This will include running tests as well as showing PGM image output and working keyboard control.
 
 As part of the viva, we will also discuss your report. You should be prepared to discuss and expand on any points mentioned in your report.
-
--->
