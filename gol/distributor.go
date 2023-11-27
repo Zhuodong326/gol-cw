@@ -59,18 +59,22 @@ func distributor(p Params, c distributorChannels) {
 	turnCount := 0
 	turn := 0
 	var cellCount int
+	pasued := false
 	var mutex sync.Mutex
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	go func() {
 		for range ticker.C {
 			mutex.Lock()
-			c.events <- AliveCellsCount{turnCount, cellCount}
-			mutex.Unlock()
+			if !pasued {
+				c.events <- AliveCellsCount{turnCount, cellCount}
+				mutex.Unlock()
+			} else {
+				mutex.Unlock()
+			}
 		}
 	}()
 
-	pasued := false
 	resume := make(chan bool)
 	quit := make(chan bool)
 	go func() {
@@ -80,15 +84,17 @@ func distributor(p Params, c distributorChannels) {
 				switch key {
 				case 's':
 					c.ioCommand <- ioOutput
+					mutex.Lock()
 					c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, turnCount)
 					for y := 0; y < p.ImageHeight; y++ {
 						for x := 0; x < p.ImageWidth; x++ {
 							c.ioOutput <- world[y][x]
 						}
 					}
-					//fmt.Println("here in s")
+					mutex.Unlock()
 				case 'q':
 					c.ioCommand <- ioOutput
+					mutex.Lock()
 					c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, turnCount)
 					for y := 0; y < p.ImageHeight; y++ {
 						for x := 0; x < p.ImageWidth; x++ {
@@ -96,17 +102,21 @@ func distributor(p Params, c distributorChannels) {
 						}
 					}
 					c.events <- FinalTurnComplete{turn, calculateAliveCells(p, world)}
+					mutex.Unlock()
 					c.ioCommand <- ioCheckIdle
 					<-c.ioIdle
 					c.events <- StateChange{turn, Quitting}
 					quit <- true
 				case 'p':
+					mutex.Lock()
 					pasued = !pasued
+					turnNow := turnCount
+					mutex.Unlock()
 					if pasued {
-						c.events <- StateChange{turn, Paused}
+						c.events <- StateChange{turnNow, Paused}
 					} else {
 						fmt.Println("Continuing")
-						c.events <- StateChange{turn, Executing}
+						c.events <- StateChange{turnNow, Executing}
 						resume <- true
 					}
 				}
@@ -117,8 +127,12 @@ func distributor(p Params, c distributorChannels) {
 	}()
 	// TODO: Execute all turns of the Game of Life.
 	for ; turn < p.Turns; turn++ {
+		mutex.Lock()
 		if pasued {
+			mutex.Unlock()
 			<-resume
+		} else {
+			mutex.Unlock()
 		}
 		if p.Threads == 1 {
 			world = nextState(p, world, 0, p.ImageHeight)
@@ -150,7 +164,9 @@ func distributor(p Params, c distributorChannels) {
 							c.events <- CellFlipped{turn + 1, util.Cell{X: k, Y: j}}
 						}
 					}
+					mutex.Lock()
 					copy(world[j], result[j-start])
+					mutex.Unlock()
 				}
 			}
 			mutex.Lock()
@@ -167,11 +183,13 @@ func distributor(p Params, c distributorChannels) {
 	// Output
 	c.ioCommand <- ioOutput
 	c.ioFilename <- fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, p.Turns)
+	mutex.Lock()
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
 			c.ioOutput <- world[y][x]
 		}
 	}
+	mutex.Unlock()
 
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
