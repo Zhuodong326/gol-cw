@@ -190,6 +190,7 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}
 	mutex.Unlock()
+	c.events <- ImageOutputComplete{CompletedTurns: p.Turns, Filename: fmt.Sprintf("%vx%vx%v", p.ImageHeight, p.ImageWidth, p.Turns)}
 
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
