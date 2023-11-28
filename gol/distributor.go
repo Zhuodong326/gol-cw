@@ -8,6 +8,8 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
+var wg sync.WaitGroup
+
 type distributorChannels struct {
 	events     chan<- Event
 	ioCommand  chan<- ioCommand
@@ -18,10 +20,65 @@ type distributorChannels struct {
 	key        <-chan rune
 }
 
-func workers(p Params, world [][]byte, result chan<- [][]byte, start, end int) {
+var result [][]byte
+
+// type sharedBuffer struct {
+// 	buffer        [][][]byte
+// 	bufferMutex   sync.Mutex
+// 	workAvailable semaphore.Semaphore
+// 	spaceAvaiable semaphore.Semaphore
+// 	result        [][]byte
+// }
+
+// func newSharedBuffer(p Params) *sharedBuffer {
+// 	buffer := make([][][]byte, p.Threads)
+// 	for i := range buffer {
+// 		buffer[i] = make([][]byte, p.ImageHeight/p.Threads)
+// 		for j := range buffer[i] {
+// 			buffer[i][j] = make([]byte, p.ImageWidth)
+// 		}
+// 	}
+// 	result := make([][]byte, p.ImageHeight/p.Threads)
+// 	for j := range result {
+// 		result[j] = make([]byte, p.ImageWidth)
+// 	}
+// 	return &sharedBuffer{
+// 		buffer:        buffer,
+// 		workAvailable: semaphore.Init(p.Threads, 0),
+// 		spaceAvaiable: semaphore.Init(p.Threads, p.Threads),
+// 		result:        result,
+// 	}
+// }
+
+// func producer(p Params, world [][]byte, sb *sharedBuffer, bufferMutex *sync.Mutex, start, end, index int) {
+// 	worldPiece := nextState(p, world, start, end)
+// 	sb.spaceAvaiable.Wait()
+// 	bufferMutex.Lock()
+// 	for i := 0; i < len(worldPiece); i++ {
+// 		copy(sb.buffer[index][i], worldPiece[i])
+// 	}
+// 	sb.workAvailable.Post()
+// 	bufferMutex.Unlock()
+// }
+
+// func consumer(p Params, sb *sharedBuffer, buffMutex *sync.Mutex, index int) {
+// 	sb.workAvailable.Wait()
+// 	buffMutex.Lock()
+// 	for i := 0; i < len(sb.buffer); i++ {
+// 		copy(sb.result[i], sb.buffer[index][i])
+// 	}
+// 	sb.spaceAvaiable.Post()
+// 	buffMutex.Unlock()
+// 	// sb.spaceAvaiable.Post()
+// }
+
+func workers(p Params, world [][]byte, result [][]byte, start, end int) {
 	worldPiece := nextState(p, world, start, end)
-	result <- worldPiece
-	close(result)
+	//result <- worldPiece
+	for i := start; i < end; i++ {
+		copy(result[i], worldPiece[i-start])
+	}
+	wg.Done()
 }
 
 func copySlice(src [][]byte) [][]byte {
@@ -125,7 +182,10 @@ func distributor(p Params, c distributorChannels) {
 			}
 		}
 	}()
+
+	// sb := newSharedBuffer(p)
 	// TODO: Execute all turns of the Game of Life.
+	result = copySlice(world)
 	for ; turn < p.Turns; turn++ {
 		mutex.Lock()
 		if pasued {
@@ -138,12 +198,10 @@ func distributor(p Params, c distributorChannels) {
 			world = nextState(p, world, 0, p.ImageHeight)
 		} else {
 			newSize := p.ImageHeight / p.Threads
-			result := make([]chan [][]byte, p.Threads)
-
-			for i := range result {
-				result[i] = make(chan [][]byte)
-			}
-
+			// result := make([]chan [][]byte, p.Threads)
+			// for i := range result {
+			// 	result[i] = make(chan [][]byte)
+			// }
 			for i := 0; i < p.Threads; i++ {
 				start := i * newSize
 				end := start + newSize
@@ -151,21 +209,62 @@ func distributor(p Params, c distributorChannels) {
 					end = p.ImageHeight
 				}
 				worldCopy := copySlice(world)
-				go workers(p, worldCopy, result[i], start, end)
+				// go producer(p, worldCopy, sb, &sb.bufferMutex, start, end, i)
+				wg.Add(1)
+				go workers(p, worldCopy, result, start, end)
+
 			}
 
+			// for i := 0; i < p.Threads; i++ {
+			// 	go func(index int) {
+			// 		sb.workAvailable.Wait()
+			// 		sb.bufferMutex.Lock()
+			// 		//result := make([][]byte, len(sb.buffer))
+			// 		for j := 0; j < len(sb.buffer[index]); j++ {
+			// 			copy(sb.result[j], sb.buffer[index][j])
+			// 		}
+			// 		wg.Done()
+			// 		sb.bufferMutex.Unlock()
+			// 		sb.spaceAvaiable.Post()
+			// 	}(i)
+			// 	start := i * newSize
+			// 	end := start + newSize
+			// 	if i == p.Threads-1 {
+			// 		end = p.ImageHeight
+			// 	}
+			// 	// This ensures that we are copying the worker result to the correct place in the world.
+			// 	for j := start; j < end; j++ {
+			// 		for k := 0; k < p.ImageWidth; k++ {
+			// 			sb.bufferMutex.Lock()
+			// 			if sb.result[j-start][k] != world[j][k] {
+			// 				sb.bufferMutex.Unlock()
+			// 				c.events <- CellFlipped{turn + 1, util.Cell{X: k, Y: j}}
+			// 			} else {
+			// 				sb.bufferMutex.Unlock()
+			// 			}
+			// 		}
+			// 		sb.bufferMutex.Lock()
+			// 		copy(world[j], sb.result[j-start])
+			// 		sb.bufferMutex.Unlock()
+			// 	}
+			// }
+			wg.Wait()
 			for i := 0; i < p.Threads; i++ {
-				result := <-result[i]
+				// result := <-result[i]
 				start := i * newSize
+				end := start + newSize
+				if i == p.Threads-1 {
+					end = p.ImageHeight
+				}
 				// This ensures that we are copying the worker result to the correct place in the world.
-				for j := start; j < start+len(result); j++ {
+				for j := start; j < end; j++ {
 					for k := 0; k < p.ImageWidth; k++ {
-						if result[j-start][k] != world[j][k] {
+						if result[j][k] != world[j][k] {
 							c.events <- CellFlipped{turn + 1, util.Cell{X: k, Y: j}}
 						}
 					}
 					mutex.Lock()
-					copy(world[j], result[j-start])
+					copy(world[j], result[j])
 					mutex.Unlock()
 				}
 			}
@@ -174,7 +273,9 @@ func distributor(p Params, c distributorChannels) {
 			cellCount = len(calculateAliveCells(p, world))
 			mutex.Unlock()
 		}
+		// wg.Wait()
 		c.events <- TurnComplete{turn}
+		// wg.Wait()
 	}
 
 	// TODO: Report the final state using FinalTurnCompleteEvent.
